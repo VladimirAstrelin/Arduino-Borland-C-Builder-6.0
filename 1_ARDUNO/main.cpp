@@ -97,7 +97,8 @@ void loop() {
   
   // Serial.available() - сколько байт данных пришло от компьютера
   // Если > 0, значит компьютер что-то прислал
-  if (Serial.available() > 0) {
+  if (Serial.available() > 0) 
+  {
     
     // readStringUntil('\n') - читает всё до символа перевода строки
     // Компьютер отправляет команды с \n в конце, чтобы мы знали где конец
@@ -107,32 +108,34 @@ void loop() {
     command.trim();
     
     // Сравниваем полученную команду с известными нам командами
-    // == означает "равно"
     
     // Если команда "TEST" - проверка связи
-    if (command == "TEST") {
+    if (command == "TEST") 
+    {
       // Отвечаем компьютеру: "ARDUINO_OK"
       Serial.println("ARDUINO_OK");
     }
     
     // Если команда "LED_ON" - включить светодиод
-    else if (command == "LED_ON") {
+    else if (command == "LED_ON") 
+    {
       digitalWrite(LED_PIN, HIGH);  // HIGH = высокий уровень = 5V = ВКЛ
       blinkActive = false;          // Останавливаем мигание
       Serial.println("LED_ON_OK");  // Подтверждаем выполнение
     }
     
     // Если команда "LED_OFF" - выключить светодиод
-    else if (command == "LED_OFF") {
+    else if (command == "LED_OFF") 
+    {
       digitalWrite(LED_PIN, LOW);   // LOW = низкий уровень = 0V = ВЫКЛ
       blinkActive = false;          // Останавливаем мигание
       Serial.println("LED_OFF_OK"); // Подтверждаем
     }
     
     // Если команда "MODE_SLOW" - медленное мигание
-    else if (command == "MODE_SLOW") {
-      // Мы НЕ БЛОКИРУЕМ программу delay-ями!
-      // Просто настраиваем параметры
+    else if (command == "MODE_SLOW") 
+    {
+      // Настраиваем параметры мигания ( меняем значения глобальных переменных )
       blinkActive = true;            // Включаем режим мигания
       blinkCount = 0;                // Счётчик сбрасываем
       blinkMaxCount = 10;            // 10 изменений = 5 раз вкл/выкл
@@ -144,7 +147,8 @@ void loop() {
     }
     
     // Если команда "MODE_MIDDLE" - среднее мигание
-    else if (command == "MODE_MIDDLE") {
+    else if (command == "MODE_MIDDLE") 
+    {
       blinkActive = true;
       blinkCount = 0;
       blinkMaxCount = 20;            // 20 изменений = 10 раз
@@ -156,7 +160,8 @@ void loop() {
     }
     
     // Если команда "MODE_FAST" - быстрое мигание
-    else if (command == "MODE_FAST") {
+    else if (command == "MODE_FAST") 
+    {
       blinkActive = true;
       blinkCount = 0;
       blinkMaxCount = 40;            // 40 изменений = 20 раз
@@ -166,7 +171,7 @@ void loop() {
       digitalWrite(LED_PIN, LOW);
       Serial.println("MODE_FAST_OK");
     }
-  }
+  } // end of:  if (Serial.available() > 0)
   
   // =====================================================
   // 2. НЕБЛОКИРУЮЩЕЕ МИГАНИЕ
@@ -174,7 +179,8 @@ void loop() {
   // =====================================================
   
   // Если режим мигания активен (blinkActive = true)
-  if (blinkActive) {
+  if (blinkActive) 
+  {
     
     // millis() - сколько миллисекунд прошло с момента запуска Arduino
     unsigned long now = millis();
@@ -182,7 +188,8 @@ void loop() {
     // Если прошло достаточно времени с последнего переключения
     // (now - lastBlinkTime) - разница в миллисекундах
     // >= blinkInterval - если больше или равно нужному интервалу
-    if (now - lastBlinkTime >= blinkInterval) {
+    if (now - lastBlinkTime >= blinkInterval) 
+    {
       
       // Запоминаем время этого переключения
       lastBlinkTime = now;
@@ -198,7 +205,8 @@ void loop() {
       blinkCount++;
       
       // Если сделали нужное количество миганий
-      if (blinkCount >= blinkMaxCount) {
+      if (blinkCount >= blinkMaxCount) 
+      {
         blinkActive = false;          // Выключаем режим мигания
         digitalWrite(LED_PIN, LOW);   // Гасим светодиод
       }
@@ -222,36 +230,38 @@ void loop() {
   int currentButtonState = digitalRead(BUTTON_PIN);
   
   // Если состояние изменилось по сравнению с предыдущим
-  if (currentButtonState != lastButtonState) {
+  if (currentButtonState != lastButtonState) 
+  {
     
     // Ждём 5 миллисекунд - чтобы кнопка "успокоилась" (антидребезг)
     delay(5);
     
-    // Читаем состояние ещё раз - подтверждаем
+    // Читаем состояние кнопки ещё раз - убеждаемся что это было именно нажатие
     currentButtonState = digitalRead(BUTTON_PIN);
     
     // Если после задержки состояние всё ещё отличается
-    if (currentButtonState != lastButtonState) {
+    if (currentButtonState != lastButtonState) 
+    {
       
       // Запоминаем новое состояние
       lastButtonState = currentButtonState;
       
       // Ограничиваем частоту отправки - не чаще раза в 50 мс
       // Это защита от спама сообщениями
-      if (millis() - lastButtonSendTime > 50) {
-        
+      if (millis() - lastButtonSendTime > 50) 
+      {        
         // Если кнопка нажата (LOW) - отправляем "B:1"
-        if (lastButtonState == LOW) {
+        if (lastButtonState == LOW) 
+        {
           Serial.println("B:1");  // B - Button, 1 - нажата
-                          // Serial.println("Кнопка нажата (стабильно)");
                 display.clearDisplay();
-                  // Отображаем первую строку
+                // Отображаем первую строку
                 display.setCursor(0, 0); // x=0, y=0 (верхний левый угол)
                 display.println("LED STATUS:");
                 
                 // Отображаем вторую строку
                 display.setCursor(0, 20); // x=0, y=20 (вторая строка)
-                display.println("BUTTON PRESSED");
+                display.println("BUTTON: ON");
                 
                 // Выводим всё на экран
                 display.display();
@@ -259,15 +269,14 @@ void loop() {
         // Если отпущена (HIGH) - отправляем "B:0"
         else {
           Serial.println("B:0");  // 0 - отпущена
-                          // Serial.println("Кнопка отпущена (стабильно)");
                 display.clearDisplay();
-                  // Отображаем первую строку
+                // Отображаем первую строку
                 display.setCursor(0, 0); // x=0, y=0 (верхний левый угол)
                 display.println("LED STATUS:");
                 
                 // Отображаем вторую строку
                 display.setCursor(0, 20); // x=0, y=20 (вторая строка)
-                display.println("BUTTON RELEASED");  
+                display.println("BUTTON: OFF");  
 
                 // Выводим всё на экран
                 display.display();  
