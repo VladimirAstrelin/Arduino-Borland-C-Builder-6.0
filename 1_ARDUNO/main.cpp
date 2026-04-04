@@ -5,19 +5,18 @@
 
 // =====================================================
 // НАСТРОЙКИ — все константы в одном месте
-// Если нужно что-то поменять, меняем только здесь
 // =====================================================
 
-#define SCREEN_WIDTH  128    // Ширина дисплея в пикселях
-#define SCREEN_HEIGHT 32     // Высота дисплея в пикселях
-#define OLED_RESET    -1     // Пин сброса (-1 = не используется)
-#define OLED_ADDR     0x3C   // Адрес дисплея на шине I2C
+#define SCREEN_WIDTH  128
+#define SCREEN_HEIGHT 32
+#define OLED_RESET    -1
+#define OLED_ADDR     0x3C
 
-#define LED_PIN       13     // Встроенный светодиод
-#define BUTTON_PIN    3      // Кнопка (D3 → GND, внутренняя подтяжка к +5V)
+#define LED_PIN       13
+#define BUTTON_PIN    3
 
-#define DEBOUNCE_MS   5      // Время антидребезга кнопки в миллисекундах
-#define BTN_SEND_MS   50     // Минимальный интервал между отправками состояния кнопки
+#define DEBOUNCE_MS   5      // Время антидребезга кнопки (мс)
+#define BTN_SEND_MS   50     // Минимальный интервал между отправками состояния кнопки (мс)
 
 // =====================================================
 // ОБЪЕКТ ДИСПЛЕЯ
@@ -27,69 +26,110 @@ Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 
 // =====================================================
 // СОСТОЯНИЕ СИСТЕМЫ
-// Все переменные состояния сгруппированы вместе —
-// так проще понять "что сейчас происходит" одним взглядом
 // =====================================================
 
 // --- Светодиод ---
-bool ledState       = false;   // Текущее состояние LED: true = горит, false = не горит
+bool ledState = false;
 
 // --- Мигание ---
-bool blinkActive    = false;   // Активен ли режим мигания прямо сейчас
-int  blinkCount     = 0;       // Сколько переключений уже сделано
-int  blinkMaxCount  = 0;       // Сколько переключений нужно сделать всего
-                                // (-1 = мигать бесконечно, пока не придёт другая команда)
-unsigned long blinkInterval  = 0;  // Пауза между переключениями (мс)
-unsigned long lastBlinkTime  = 0;  // Время последнего переключения (мс от старта)
+bool          blinkActive   = false;
+int           blinkCount    = 0;
+int           blinkMaxCount = 0;
+unsigned long blinkInterval = 0;
+unsigned long lastBlinkTime = 0;
 
 // --- Кнопка ---
-bool buttonPressed       = false;  // Текущее состояние кнопки: true = нажата
+bool buttonPressed = false;
 
 // --- Дисплей ---
-bool displayNeedsUpdate  = false;  // Флаг: нужно ли перерисовать дисплей?
-                                    // Вместо вызова updateDisplay() напрямую мы ставим этот флаг,
-                                    // и дисплей обновляется один раз в конце каждого цикла loop().
-                                    // Это важно для MODE_FAST: без флага дисплей обновлялся бы
-                                    // 10+ раз в секунду прямо внутри логики мигания, что тормозит I2C.
+bool displayNeedsUpdate = false;
+
+// =====================================================
+// ФУНКЦИЯ: верификация состояния пина
+//
+// После любой команды, которая меняет состояние железа,
+// мы читаем пин обратно через digitalRead() и сравниваем
+// с тем, что хотели установить.
+//
+// Зачем это нужно:
+//   - digitalRead() читает реальный физический уровень на пине,
+//     а не просто переменную в памяти программы.
+//   - Если пин повреждён, закорочен, или где-то в коде
+//     была ошибка конфигурации — мы это узнаем.
+//   - Это правильная инженерная привычка: не доверяй,
+//     а проверяй. Особенно важно при управлении реальными
+//     устройствами (реле, моторы, клапаны и т.д.)
+//
+// Аргументы:
+//   pin      — номер пина, который проверяем
+//   expected — ожидаемое состояние (HIGH или LOW)
+//
+// Возвращает:
+//   true  — пин действительно в ожидаемом состоянии
+//   false — пин НЕ в ожидаемом состоянии (что-то пошло не так)
+// =====================================================
+
+bool verifyPin(int pin, int expected) {
+  int actual = digitalRead(pin);  // Читаем реальный уровень с пина
+  return (actual == expected);    // Сравниваем с тем, что хотели
+}
 
 // =====================================================
 // ФУНКЦИЯ: обновление дисплея
-// Вызывается ТОЛЬКО через флаг displayNeedsUpdate,
-// один раз за итерацию loop() — не чаще
 // =====================================================
 
 void updateDisplay() {
   display.clearDisplay();
 
-  // Строка 1 (y=0): состояние светодиода
   display.setCursor(0, 0);
   display.print("LED STATUS: ");
   display.println(ledState ? "ON" : "OFF");
 
-  // Строка 2 (y=20): состояние кнопки
   display.setCursor(0, 20);
   display.print("BUTTON: ");
   display.println(buttonPressed ? "ON" : "OFF");
 
-  // display.display() — только эта команда реально отправляет буфер на экран по I2C.
-  // Все предыдущие команды рисуют только в памяти Arduino (буфер).
+  // Отправляем буфер на экран по I2C
   display.display();
 }
 
 // =====================================================
-// ВСПОМОГАТЕЛЬНАЯ ФУНКЦИЯ: запуск мигания
-// Вызывается из обработчика команд, чтобы не дублировать код
+// ФУНКЦИЯ: запуск мигания
+//
+// maxCount — сколько переключений сделать
+//            (-1 = мигать бесконечно)
+// interval — интервал между переключениями (мс)
+//
+// Возвращает true если мигание успешно запущено,
+// false если начальное состояние пина не подтвердилось.
 // =====================================================
 
-void startBlink(int maxCount, unsigned long interval) {
+bool startBlink(int maxCount, unsigned long interval) {
+
+  // Сбрасываем всё в начальное состояние перед стартом
   blinkActive   = true;
   blinkCount    = 0;
   blinkMaxCount = maxCount;
   blinkInterval = interval;
-  lastBlinkTime = millis();   // Запоминаем текущее время как точку отсчёта
-  ledState      = false;
+  lastBlinkTime = millis();
+
+  // Сбрасываем ledState и физически гасим LED.
+  // Мигание всегда начинается с выключенного состояния,
+  // чтобы первый такт был предсказуемым: ВЫКЛ → ВКЛ → ВЫКЛ...
+  ledState = false;
   digitalWrite(LED_PIN, LOW);
+
+  // ---- ВЕРИФИКАЦИЯ СТАРТОВОГО СОСТОЯНИЯ ----
+  // Убеждаемся, что LED реально выключился перед началом мигания.
+  // Если пин не в LOW — что-то не так с железом, мигание лучше не запускать.
+  if (!verifyPin(LED_PIN, LOW)) {
+    // Не смогли установить начальное состояние — отменяем запуск
+    blinkActive = false;
+    return false;  // Сообщаем вызывающему коду: что-то пошло не так
+  }
+
   displayNeedsUpdate = true;
+  return true;  // Всё хорошо, мигание запущено
 }
 
 // =====================================================
@@ -97,28 +137,23 @@ void startBlink(int maxCount, unsigned long interval) {
 // =====================================================
 
 void setup() {
-  // Настройка пинов
   pinMode(LED_PIN,    OUTPUT);
-  pinMode(BUTTON_PIN, INPUT_PULLUP);  // Внутренний резистор подтягивает пин к +5V:
-                                       // кнопка не нажата → HIGH, нажата → LOW
-  digitalWrite(LED_PIN, LOW);          // Гасим LED при старте
+  pinMode(BUTTON_PIN, INPUT_PULLUP);
+  digitalWrite(LED_PIN, LOW);
 
-  // Инициализация Serial
   Serial.begin(115200);
-  delay(1000);                         // Даём время USB-соединению установиться
+  delay(1000);
   Serial.println("ARDUINO_READY");
 
-  // Инициализация дисплея
   if (!display.begin(SSD1306_SWITCHCAPVCC, OLED_ADDR)) {
     Serial.println(F("Ошибка инициализации дисплея"));
-    while (true);  // Останавливаем программу — без дисплея работать нет смысла
+    while (true);
   }
 
   display.clearDisplay();
   display.setTextColor(SSD1306_WHITE);
   display.setTextSize(1);
 
-  // Отображаем начальное состояние
   updateDisplay();
 }
 
@@ -140,102 +175,162 @@ void loop() {
 
   if (Serial.available() > 0) {
     String command = Serial.readStringUntil('\n');
-    command.trim();  // Убираем \r, пробелы по краям
+    command.trim();
 
+    // ---------- TEST ----------
     if (command == "TEST") {
+      // Простая проверка связи — верификация не нужна,
+      // это не команда управления железом
       Serial.println("ARDUINO_OK");
     }
 
+    // ---------- LED_ON ----------
     else if (command == "LED_ON") {
-      blinkActive = false;       // Останавливаем мигание, если было активно
+
+      blinkActive = false;  // Останавливаем мигание если было активно
       ledState    = true;
       digitalWrite(LED_PIN, HIGH);
-      Serial.println("LED_ON_OK");
-      displayNeedsUpdate = true; // Запрашиваем перерисовку дисплея
-    }
 
-    else if (command == "LED_OFF") {
-      blinkActive = false;
-      ledState    = false;
-      digitalWrite(LED_PIN, LOW);
-      Serial.println("LED_OFF_OK");
+      // ВЕРИФИКАЦИЯ: читаем пин обратно и проверяем реальное состояние.
+      // verifyPin(LED_PIN, HIGH) вернёт true только если на пине
+      // действительно HIGH после нашей команды.
+      if (verifyPin(LED_PIN, HIGH)) {
+        // Всё хорошо — пин реально в HIGH, LED горит
+        Serial.println("LED_ON_OK");
+      } else {
+        // Что-то пошло не так — синхронизируем переменную с реальностью
+        // и сообщаем компьютеру об ошибке
+        ledState = false;  // Раз пин не HIGH — LED не горит, обновляем переменную
+        Serial.println("LED_ON_FAIL");
+      }
+
       displayNeedsUpdate = true;
     }
 
-    // Для режимов мигания используем вспомогательную функцию startBlink().
-    // Аргументы: количество переключений и интервал в мс.
-    // Количество переключений = количество миганий × 2
-    // (каждое мигание = включить + выключить = 2 переключения)
+    // ---------- LED_OFF ----------
+    else if (command == "LED_OFF") {
+
+      blinkActive = false;
+      ledState    = false;
+      digitalWrite(LED_PIN, LOW);
+
+      // ВЕРИФИКАЦИЯ: проверяем что пин действительно LOW
+      if (verifyPin(LED_PIN, LOW)) {
+        Serial.println("LED_OFF_OK");
+      } else {
+        // Не удалось выключить — синхронизируем переменную
+        ledState = true;  // Раз пин не LOW — LED всё ещё горит
+        Serial.println("LED_OFF_FAIL");
+      }
+
+      displayNeedsUpdate = true;
+    }
+
+    // ---------- MODE_SLOW ----------
+    // Для режимов мигания логика верификации двухэтапная:
+    //
+    // Этап 1 (здесь): startBlink() проверяет что начальное
+    //   состояние пина (LOW) установлено успешно.
+    //   Ответ "_OK" или "_FAIL" говорит о том, запустилось ли мигание.
+    //
+    // Этап 2 (в блоке мигания): когда мигание завершится,
+    //   отправляем "BLINK_DONE" — это подтверждение что
+    //   все N миганий были выполнены до конца.
+    //   Если мигание прервётся другой командой — "BLINK_DONE"
+    //   отправлен не будет, и компьютер это заметит.
 
     else if (command == "MODE_SLOW") {
-      startBlink(10, 1000);      // 5 миганий, раз в секунду
-      Serial.println("MODE_SLOW_OK");
+      if (startBlink(10, 1000)) {
+        // startBlink вернул true — начальное состояние подтверждено,
+        // мигание запущено. Компьютер знает что процесс начался.
+        Serial.println("MODE_SLOW_OK");
+      } else {
+        // startBlink вернул false — не удалось установить начальное состояние
+        Serial.println("MODE_SLOW_FAIL");
+      }
     }
 
     else if (command == "MODE_MIDDLE") {
-      startBlink(20, 500);       // 10 миганий, раз в полсекунды
-      Serial.println("MODE_MIDDLE_OK");
+      if (startBlink(20, 500)) {
+        Serial.println("MODE_MIDDLE_OK");
+      } else {
+        Serial.println("MODE_MIDDLE_FAIL");
+      }
     }
 
     else if (command == "MODE_FAST") {
-      startBlink(40, 100);       // 20 миганий, 10 раз в секунду
-      Serial.println("MODE_FAST_OK");
+      if (startBlink(40, 100)) {
+        Serial.println("MODE_FAST_OK");
+      } else {
+        Serial.println("MODE_FAST_FAIL");
+      }
     }
   }
 
   // =====================================================
   // 2. НЕБЛОКИРУЮЩЕЕ МИГАНИЕ
-  //
-  // Мы НЕ используем delay() — Arduino не "засыпает".
-  // Вместо этого каждую итерацию loop() проверяем:
-  // "прошло ли достаточно времени с последнего переключения?"
-  // Если да — переключаем. Если нет — идём дальше.
-  // Благодаря этому Serial и кнопка работают без задержек.
   // =====================================================
 
   if (blinkActive) {
-    unsigned long now = millis();  // Текущее время в мс от старта Arduino
+    unsigned long now = millis();
 
-    // Проверяем: прошёл ли нужный интервал?
     if (now - lastBlinkTime >= blinkInterval) {
-      lastBlinkTime = now;            // Запоминаем момент переключения
+      lastBlinkTime = now;
 
-      ledState = !ledState;           // Инвертируем состояние (true→false, false→true)
+      // Переключаем состояние
+      ledState = !ledState;
       digitalWrite(LED_PIN, ledState);
-      blinkCount++;
-      displayNeedsUpdate = true;      // Запрашиваем обновление дисплея
 
-      // Проверяем: выполнили ли нужное количество переключений?
-      // blinkMaxCount == -1 означает "мигать бесконечно"
+      // ВЕРИФИКАЦИЯ КАЖДОГО ПЕРЕКЛЮЧЕНИЯ:
+      // Проверяем что пин реально переключился в нужное состояние.
+      // Если нет — останавливаем мигание и сообщаем об ошибке.
+      // Это важно: при управлении реальным устройством сбой
+      // на середине цикла должен быть замечен немедленно.
+      int expectedLevel = ledState ? HIGH : LOW;
+      if (!verifyPin(LED_PIN, expectedLevel)) {
+        // Переключение не прошло — аварийная остановка мигания
+        blinkActive = false;
+        ledState    = false;
+        digitalWrite(LED_PIN, LOW);
+        displayNeedsUpdate = true;
+        Serial.println("BLINK_PIN_FAIL");  // Сообщаем компьютеру о сбое
+        return;  // Прерываем текущую итерацию loop()
+      }
+
+      blinkCount++;
+      displayNeedsUpdate = true;
+
+      // Проверяем завершение мигания
       if (blinkMaxCount != -1 && blinkCount >= blinkMaxCount) {
         blinkActive = false;
         ledState    = false;
         digitalWrite(LED_PIN, LOW);
         displayNeedsUpdate = true;
+
+        // ЭТАП 2 ВЕРИФИКАЦИИ для режимов мигания:
+        // Отправляем "BLINK_DONE" только когда мигание реально
+        // завершилось — все N переключений выполнены, LED погашен.
+        // Компьютер получит этот ответ через некоторое время после
+        // MODE_*_OK, и будет точно знать момент завершения процесса.
+        if (verifyPin(LED_PIN, LOW)) {
+          Serial.println("BLINK_DONE");       // Мигание завершено успешно
+        } else {
+          Serial.println("BLINK_END_FAIL");   // Мигание завершилось, но LED не погас
+        }
       }
     }
   }
 
   // =====================================================
   // 3. АНТИДРЕБЕЗГ И ЧТЕНИЕ КНОПКИ
-  //
-  // Проблема дребезга: при нажатии кнопки контакты физически
-  // "прыгают" несколько раз за ~5 мс, создавая ложные срабатывания.
-  //
-  // Решение через millis() (без delay!):
-  // Фиксируем момент когда сигнал изменился, и принимаем новое
-  // состояние только если оно стабильно на протяжении DEBOUNCE_MS.
   // =====================================================
 
-  // static — переменная живёт всё время работы программы,
-  // но видна только внутри loop(). Значение сохраняется между вызовами.
+  static int           lastStableState = HIGH;
+  static int           rawState        = HIGH;
+  static unsigned long debounceStart   = 0;
+  static unsigned long lastSendTime    = 0;
 
-  static int           lastStableState  = HIGH;  // Последнее подтверждённое состояние кнопки
-  static int           rawState         = HIGH;  // Последнее "сырое" считанное состояние
-  static unsigned long debounceStart    = 0;     // Момент когда сигнал начал меняться
-  static unsigned long lastSendTime     = 0;     // Когда последний раз отправляли B:0/B:1
-
-  int currentRaw = digitalRead(BUTTON_PIN);      // Читаем текущий сигнал с пина
+  int currentRaw = digitalRead(BUTTON_PIN);
 
   // Если сигнал изменился — начинаем отсчёт антидребезга заново
   if (currentRaw != rawState) {
@@ -243,18 +338,17 @@ void loop() {
     debounceStart = millis();
   }
 
-  // Если сигнал стабилен уже DEBOUNCE_MS миллисекунд — это настоящее нажатие/отпускание
+  // Если сигнал стабилен уже DEBOUNCE_MS мс — это настоящее нажатие
   if (millis() - debounceStart >= DEBOUNCE_MS && currentRaw != lastStableState) {
     lastStableState = currentRaw;
 
-    // Отправляем состояние не чаще одного раза в BTN_SEND_MS мс
     if (millis() - lastSendTime >= BTN_SEND_MS) {
       lastSendTime = millis();
 
-      if (lastStableState == LOW) {   // LOW = кнопка нажата (пин соединён с GND)
+      if (lastStableState == LOW) {
         buttonPressed = true;
         Serial.println("B:1");
-      } else {                         // HIGH = кнопка отпущена (подтяжка к +5V)
+      } else {
         buttonPressed = false;
         Serial.println("B:0");
       }
@@ -265,19 +359,12 @@ void loop() {
 
   // =====================================================
   // 4. ОБНОВЛЕНИЕ ДИСПЛЕЯ
-  //
-  // Обновляем дисплей только если что-то изменилось (флаг = true).
-  // Один вызов за итерацию — не важно, сколько событий произошло выше.
-  // Это предотвращает лишние медленные операции записи по I2C.
   // =====================================================
 
   if (displayNeedsUpdate) {
     updateDisplay();
-    displayNeedsUpdate = false;  // Сбрасываем флаг до следующего изменения
+    displayNeedsUpdate = false;
   }
 
-  // Небольшая пауза чтобы не гонять loop() вхолостую тысячи раз в секунду.
-  // НЕ влияет на точность мигания и отклик кнопки — мы всё равно
-  // проверяем millis(), а не считаем итерации.
   delay(1);
 }
