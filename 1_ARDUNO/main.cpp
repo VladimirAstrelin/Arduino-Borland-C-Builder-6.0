@@ -1,10 +1,16 @@
+// =====================================================
+// ARDIONO NANO, встроенный дисплей SSD1306, 
+// кнопка на пине D3. Взаимодействие с Windows (COM port)
+// v3.0
+// =====================================================
+
 #include <Arduino.h>
 #include <Wire.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
 
 // =====================================================
-// НАСТРОЙКИ — все константы в одном месте
+// НАСТРОЙКИ: дисплей, светодиоды, кнопки, время
 // =====================================================
 
 #define SCREEN_WIDTH  128
@@ -70,8 +76,7 @@ bool displayNeedsUpdate = false;
 // =====================================================
 
 bool verifyPin(int pin, int expected) {
-  int actual = digitalRead(pin);  // Читаем реальный уровень с пина
-  return (actual == expected);    // Сравниваем с тем, что хотели
+  return (digitalRead(pin) == expected); // Сравниваем с тем, что хотели. Вернёт true / false
 }
 
 // =====================================================
@@ -82,11 +87,11 @@ void updateDisplay() {
   display.clearDisplay();
 
   display.setCursor(0, 0);
-  display.print("LED STATUS: ");
+  display.print("LED STATUS   ");
   display.println(ledState ? "ON" : "OFF");
 
   display.setCursor(0, 20);
-  display.print("BUTTON: ");
+  display.print("BUTTON       ");
   display.println(buttonPressed ? "ON" : "OFF");
 
   // Отправляем буфер на экран по I2C
@@ -94,13 +99,14 @@ void updateDisplay() {
 }
 
 // =====================================================
-// ФУНКЦИЯ: запуск мигания
-//
+// ФУНКЦИЯ: запуск и настройка параметров мигания 
+// Аргументы:
 // maxCount — сколько переключений сделать
 //            (-1 = мигать бесконечно)
 // interval — интервал между переключениями (мс)
 //
-// Возвращает true если мигание успешно запущено,
+// Возвращает:
+// true если мигание успешно запущено,
 // false если начальное состояние пина не подтвердилось.
 // =====================================================
 
@@ -109,9 +115,11 @@ bool startBlink(int maxCount, unsigned long interval) {
   // Сбрасываем всё в начальное состояние перед стартом
   blinkActive   = true;
   blinkCount    = 0;
+  // Инициализируем глобальные переменные при помощи локальных
   blinkMaxCount = maxCount;
   blinkInterval = interval;
-  lastBlinkTime = millis();
+  // Засекаем текущее время, это наша точка отсчёта
+  lastBlinkTime = millis();// Считаем время с этого момента, а не с момента запуска Arduino
 
   // Сбрасываем ledState и физически гасим LED.
   // Мигание всегда начинается с выключенного состояния,
@@ -122,7 +130,8 @@ bool startBlink(int maxCount, unsigned long interval) {
   // ---- ВЕРИФИКАЦИЯ СТАРТОВОГО СОСТОЯНИЯ ----
   // Убеждаемся, что LED реально выключился перед началом мигания.
   // Если пин не в LOW — что-то не так с железом, мигание лучше не запускать.
-  if (!verifyPin(LED_PIN, LOW)) {
+  if (!verifyPin(LED_PIN, LOW)) 
+  {
     // Не смогли установить начальное состояние — отменяем запуск
     blinkActive = false;
     return false;  // Сообщаем вызывающему коду: что-то пошло не так
@@ -145,7 +154,8 @@ void setup() {
   delay(1000);
   Serial.println("ARDUINO_READY");
 
-  if (!display.begin(SSD1306_SWITCHCAPVCC, OLED_ADDR)) {
+  if (!display.begin(SSD1306_SWITCHCAPVCC, OLED_ADDR)) 
+  {
     Serial.println(F("Ошибка инициализации дисплея"));
     while (true);
   }
@@ -173,19 +183,22 @@ void loop() {
   // 1. КОМАНДЫ ОТ КОМПЬЮТЕРА
   // =====================================================
 
-  if (Serial.available() > 0) {
+  if (Serial.available() > 0) 
+  {
     String command = Serial.readStringUntil('\n');
     command.trim();
 
     // ---------- TEST ----------
-    if (command == "TEST") {
+    if (command == "TEST") 
+    {
       // Простая проверка связи — верификация не нужна,
       // это не команда управления железом
       Serial.println("ARDUINO_OK");
     }
 
     // ---------- LED_ON ----------
-    else if (command == "LED_ON") {
+    else if (command == "LED_ON") 
+    {
 
       blinkActive = false;  // Останавливаем мигание если было активно
       ledState    = true;
@@ -194,7 +207,8 @@ void loop() {
       // ВЕРИФИКАЦИЯ: читаем пин обратно и проверяем реальное состояние.
       // verifyPin(LED_PIN, HIGH) вернёт true только если на пине
       // действительно HIGH после нашей команды.
-      if (verifyPin(LED_PIN, HIGH)) {
+      if (verifyPin(LED_PIN, HIGH)) 
+      {
         // Всё хорошо — пин реально в HIGH, LED горит
         Serial.println("LED_ON_OK");
       } else {
@@ -208,14 +222,15 @@ void loop() {
     }
 
     // ---------- LED_OFF ----------
-    else if (command == "LED_OFF") {
-
+    else if (command == "LED_OFF") 
+    {
       blinkActive = false;
       ledState    = false;
       digitalWrite(LED_PIN, LOW);
 
       // ВЕРИФИКАЦИЯ: проверяем что пин действительно LOW
-      if (verifyPin(LED_PIN, LOW)) {
+      if (verifyPin(LED_PIN, LOW)) 
+      {
         Serial.println("LED_OFF_OK");
       } else {
         // Не удалось выключить — синхронизируем переменную
@@ -226,12 +241,12 @@ void loop() {
       displayNeedsUpdate = true;
     }
 
-    // ---------- MODE_SLOW ----------
+    
     // Для режимов мигания логика верификации двухэтапная:
     //
     // Этап 1 (здесь): startBlink() проверяет что начальное
     //   состояние пина (LOW) установлено успешно.
-    //   Ответ "_OK" или "_FAIL" говорит о том, запустилось ли мигание.
+    //   Ответ "XXX_OK" или "XXX_FAIL" говорит о том, запустилось ли мигание.
     //
     // Этап 2 (в блоке мигания): когда мигание завершится,
     //   отправляем "BLINK_DONE" — это подтверждение что
@@ -239,8 +254,11 @@ void loop() {
     //   Если мигание прервётся другой командой — "BLINK_DONE"
     //   отправлен не будет, и компьютер это заметит.
 
-    else if (command == "MODE_SLOW") {
-      if (startBlink(10, 1000)) {
+   // ---------- MODE_SLOW ----------
+    else if (command == "MODE_SLOW") 
+    {
+      if (startBlink(10, 1000)) 
+      {
         // startBlink вернул true — начальное состояние подтверждено,
         // мигание запущено. Компьютер знает что процесс начался.
         Serial.println("MODE_SLOW_OK");
@@ -249,17 +267,21 @@ void loop() {
         Serial.println("MODE_SLOW_FAIL");
       }
     }
-
-    else if (command == "MODE_MIDDLE") {
-      if (startBlink(20, 500)) {
+   // ---------- MODE_MIDDLE ----------
+    else if (command == "MODE_MIDDLE") 
+    {
+      if (startBlink(20, 500)) 
+      {
         Serial.println("MODE_MIDDLE_OK");
       } else {
         Serial.println("MODE_MIDDLE_FAIL");
       }
     }
-
-    else if (command == "MODE_FAST") {
-      if (startBlink(40, 100)) {
+   // ---------- MODE_FAST ----------
+    else if (command == "MODE_FAST") 
+    {
+      if (startBlink(40, 100)) 
+      {
         Serial.println("MODE_FAST_OK");
       } else {
         Serial.println("MODE_FAST_FAIL");
@@ -269,25 +291,28 @@ void loop() {
 
   // =====================================================
   // 2. НЕБЛОКИРУЮЩЕЕ МИГАНИЕ
+  // Этот блок отвечает за то что происходит во время мигания
   // =====================================================
 
-  if (blinkActive) {
+  if (blinkActive) 
+  {
     unsigned long now = millis();
 
-    if (now - lastBlinkTime >= blinkInterval) {
+    if (now - lastBlinkTime >= blinkInterval) 
+    {
       lastBlinkTime = now;
 
       // Переключаем состояние
       ledState = !ledState;
       digitalWrite(LED_PIN, ledState);
 
-      // ВЕРИФИКАЦИЯ КАЖДОГО ПЕРЕКЛЮЧЕНИЯ:
+      // ЭТАП 1: ВЕРИФИКАЦИЯ КАЖДОГО ПЕРЕКЛЮЧЕНИЯ
       // Проверяем что пин реально переключился в нужное состояние.
       // Если нет — останавливаем мигание и сообщаем об ошибке.
       // Это важно: при управлении реальным устройством сбой
       // на середине цикла должен быть замечен немедленно.
-      int expectedLevel = ledState ? HIGH : LOW;
-      if (!verifyPin(LED_PIN, expectedLevel)) {
+      if (!verifyPin(LED_PIN, ledState ? HIGH : LOW)) 
+      {
         // Переключение не прошло — аварийная остановка мигания
         blinkActive = false;
         ledState    = false;
@@ -301,18 +326,20 @@ void loop() {
       displayNeedsUpdate = true;
 
       // Проверяем завершение мигания
-      if (blinkMaxCount != -1 && blinkCount >= blinkMaxCount) {
+      if (blinkMaxCount != -1 && blinkCount >= blinkMaxCount) 
+      {
         blinkActive = false;
         ledState    = false;
         digitalWrite(LED_PIN, LOW);
         displayNeedsUpdate = true;
 
-        // ЭТАП 2 ВЕРИФИКАЦИИ для режимов мигания:
+        // ЭТАП 2: ВЕРИФИКАЦИИ ДЛЯ РЕЖИМОВ МИГАНИЯ
         // Отправляем "BLINK_DONE" только когда мигание реально
         // завершилось — все N переключений выполнены, LED погашен.
         // Компьютер получит этот ответ через некоторое время после
-        // MODE_*_OK, и будет точно знать момент завершения процесса.
-        if (verifyPin(LED_PIN, LOW)) {
+        // MODE_XXX_OK, и будет точно знать момент завершения процесса.
+        if (verifyPin(LED_PIN, LOW)) 
+        {
           Serial.println("BLINK_DONE");       // Мигание завершено успешно
         } else {
           Serial.println("BLINK_END_FAIL");   // Мигание завершилось, но LED не погас
@@ -333,19 +360,23 @@ void loop() {
   int currentRaw = digitalRead(BUTTON_PIN);
 
   // Если сигнал изменился — начинаем отсчёт антидребезга заново
-  if (currentRaw != rawState) {
+  if (currentRaw != rawState) 
+  {
     rawState      = currentRaw;
     debounceStart = millis();
   }
 
-  // Если сигнал стабилен уже DEBOUNCE_MS мс — это настоящее нажатие
-  if (millis() - debounceStart >= DEBOUNCE_MS && currentRaw != lastStableState) {
+  // Если сигнал стабилен и больше чем DEBOUNCE_MS, то это уже настоящее нажатие
+  if (millis() - debounceStart >= DEBOUNCE_MS && currentRaw != lastStableState) 
+  {
     lastStableState = currentRaw;
 
-    if (millis() - lastSendTime >= BTN_SEND_MS) {
+    if (millis() - lastSendTime >= BTN_SEND_MS) 
+    {
       lastSendTime = millis();
 
-      if (lastStableState == LOW) {
+      if (lastStableState == LOW) 
+      {
         buttonPressed = true;
         Serial.println("B:1");
       } else {
@@ -368,3 +399,13 @@ void loop() {
 
   delay(1);
 }
+
+
+/*
+Расширяемость: 
+Если надо добавить новую команду — пишем else if блок по готовому шаблону.
+Если надо добавить новый режим мигания — один вызов startBlink() с нужными параметрами.
+
+TODO:
+String вместо char[]
+*/
