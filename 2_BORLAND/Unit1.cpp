@@ -1,5 +1,3 @@
-//---------------------------------------------------------------------------
-// Подключаем основные библиотеки
 #include <vcl.h>           // Визуальные компоненты C++ Builder
 #pragma hdrstop            // Директива компилятора - стоп заголовочным файлам
 
@@ -107,8 +105,8 @@ __fastcall TForm1::TForm1(TComponent* Owner)
     
     // Кнопка D3 - начальное состояние: отпущена, цвет жёлтый
     LBL_BTN_D3_STATUS->Caption = "D3 BUTTON: RELEASED";
-    SH_BTN_D3_COLOR->Brush->Color = clYellow;  // Жёлтый
-    SH_BTN_D3_COLOR->Shape = stCircle;          // Круг
+    SH_BTN_D3_COLOR->Brush->Color = clYellow;    // Жёлтый
+    SH_BTN_D3_COLOR->Shape = stCircle;           // Круг
     SH_BTN_D3_COLOR->Width = 30;                 // Ширина 30 пикселей
     SH_BTN_D3_COLOR->Height = 30;                // Высота 30 пикселей
 
@@ -264,8 +262,13 @@ void TForm1::ParseArduinoData(String data)
     
     // Проверяем, не является ли это ответом на нашу команду
     // Если да - сбрасываем флаг commandPending
-    if (data == "LED_ON_OK" || data == "LED_OFF_OK" || 
-        data == "MODE_SLOW_OK" || data == "MODE_MIDDLE_OK" || data == "MODE_FAST_OK") {
+
+       if (data == "LED_ON_OK"
+        || data == "LED_OFF_OK"
+        || data == "MODE_SLOW_OK"
+        || data == "MODE_MIDDLE_OK"
+        || data == "MODE_FAST_OK")
+    {
         commandPending = false;  // Команда выполнена!
     }
     
@@ -367,7 +370,7 @@ void __fastcall TForm1::BTN_REFRESHClick(TObject *Sender)
     FormCreate(Sender);
     
     // Сообщаем пользователю
-    MessageBox(0, "COM port list refreshed", "COM Port list", MB_OK);
+    MessageBox(0, "COM port list refreshed", "COM PORT LIST", MB_OK);
     SB_MAIN_STATUS_BAR->SimpleText = "COM port list refreshed";
 }
 
@@ -427,10 +430,10 @@ void __fastcall TForm1::BTN_CONNECTClick(TObject *Sender)
             comPort.c_str(),                // Имя порта (строка в стиле C)
             GENERIC_READ | GENERIC_WRITE,   // Разрешаем и чтение, и запись
             0,                              // Не разрешаем другим программам доступ
-            NULL,                            // Безопасность по умолчанию
-            OPEN_EXISTING,                    // Открываем существующий порт
-            FILE_ATTRIBUTE_NORMAL,            // Обычные атрибуты
-            NULL                               // Без шаблона
+            NULL,                           // Безопасность по умолчанию
+            OPEN_EXISTING,                  // Открываем существующий порт
+            FILE_ATTRIBUTE_NORMAL,          // Обычные атрибуты
+            NULL                            // Без шаблона
     );
 
     // Проверяем, удалось ли открыть порт
