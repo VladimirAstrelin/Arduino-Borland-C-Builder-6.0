@@ -17,279 +17,192 @@ Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 
 // =====================================================
 // Переменные для НЕБЛОКИРУЮЩЕГО мигания
-// (мигаем, но при этом продолжаем читать кнопку и команды)
 // =====================================================
 
-// Флаг: активно ли сейчас мигание? true = да, false = нет
 bool blinkActive = false;
-
-// Счётчик: сколько раз уже мигнули (сколько раз меняли состояние)
 int blinkCount = 0;
-
-// Сколько всего нужно сделать миганий (изменений состояния)
-// Например, 10 изменений = 5 полных циклов (вкл+выкл)
 int blinkMaxCount = 0;
-
-// Интервал между миганиями в миллисекундах (1000 = 1 секунда)
 unsigned long blinkInterval = 0;
-
-// Время последнего переключения светодиода (в миллисекундах от запуска)
 unsigned long lastBlinkTime = 0;
-
-// Текущее состояние светодиода: true = горит, false = не горит
 bool ledState = false;
 
-// =====================================================
-// Функция setup() выполняется ОДИН РАЗ при старте Arduino
-// =====================================================
-void setup() {
-  
-  // --- Настраиваем пины (контакты) ---
-  
-  // Пин светодиода должен быть ВЫХОДОМ (OUTPUT)
-  pinMode(LED_PIN, OUTPUT);
-  
-  // Пин кнопки должен быть ВХОДОМ (INPUT)
-  // PULLUP - включает внутренний резистор, который подтягивает пин к +5V
-  // Когда кнопка НЕ НАЖАТА - на пине HIGH (1)
-  // Когда кнопка НАЖАТА - пин соединяется с GND (0)
-  pinMode(BUTTON_PIN, INPUT_PULLUP);
-  
-  // Убеждаемся, что светодиод выключен при старте
-  digitalWrite(LED_PIN, LOW);
-  
-  // --- Настраиваем связь с компьютером ---
-  
-  // Serial - это последовательный порт (USB)
-  // begin(115200) - открываем порт со скоростью 115200 бод
-  // Это число должно совпадать с тем, что в программе на компьютере
-  Serial.begin(115200);
-  
-  // Ждём 1 секунду (1000 миллисекунд), чтобы всё успело стабилизироваться
-  delay(1000);
-  
-  // Отправляем в монитор порта (Serial Monitor) сообщение о готовности к работе
-  Serial.println("ARDUINO_READY");
+// Текущее состояние кнопки для отображения на дисплее
+bool buttonPressed = false;
 
-  // Инициализация дисплея
-    if (!display.begin(SSD1306_SWITCHCAPVCC, OLED_ADDR)) 
-    {
-        Serial.println(F("Ошибка инициализации дисплея"));
-        while (true); // Останавливаем выполнение, если дисплей не найден
-    }
-    // Очищаем буфер дисплея
-    display.clearDisplay();
-    // Настраиваем цвет текста (белый на черном фоне)
-    display.setTextColor(SSD1306_WHITE);
-    // Настраиваем размер шрифта (1 - стандартный)
-    display.setTextSize(1);
+// =====================================================
+// Функция обновления дисплея
+// Вызывается при любом изменении состояния LED или кнопки
+// =====================================================
+void updateDisplay() {
+  display.clearDisplay();
+
+  // Строка 1: состояние LED
+  display.setCursor(0, 0);
+  display.print("LED STATUS: ");
+  display.println(ledState ? "ON" : "OFF");
+
+  // Строка 2: состояние кнопки
+  display.setCursor(0, 20);
+  display.print("BUTTON: ");
+  display.println(buttonPressed ? "ON" : "OFF");
+
+  display.display();
 }
 
 // =====================================================
-// Функция loop() выполняется БЕСКОНЕЧНО ПО КРУГУ
-// После окончания loop() сразу начинается заново
+// Функция setup()
+// =====================================================
+void setup() {
+  pinMode(LED_PIN, OUTPUT);
+  pinMode(BUTTON_PIN, INPUT_PULLUP);
+  digitalWrite(LED_PIN, LOW);
+
+  Serial.begin(115200);
+  delay(1000);
+  Serial.println("ARDUINO_READY");
+
+  // Инициализация дисплея
+  if (!display.begin(SSD1306_SWITCHCAPVCC, OLED_ADDR)) {
+    Serial.println(F("Ошибка инициализации дисплея"));
+    while (true);
+  }
+
+  display.clearDisplay();
+  display.setTextColor(SSD1306_WHITE);
+  display.setTextSize(1);
+
+  // Отображаем начальное состояние
+  updateDisplay();
+}
+
+// =====================================================
+// Функция loop()
 // =====================================================
 void loop() {
-  
+
   // =====================================================
   // 1. ОБРАБОТКА КОМАНД ОТ КОМПЬЮТЕРА
   // =====================================================
-  
-  // Serial.available() - сколько байт данных пришло от компьютера
-  // Если > 0, значит компьютер что-то прислал
-  if (Serial.available() > 0) 
-  {
-    
-    // readStringUntil('\n') - читает всё до символа перевода строки
-    // Компьютер отправляет команды с \n в конце, чтобы мы знали где конец
+
+  if (Serial.available() > 0) {
     String command = Serial.readStringUntil('\n');
-    
-    // trim() - удаляет лишние пробелы в начале и конце строки
     command.trim();
-    
-    // Сравниваем полученную команду с известными нам командами
-    
-    // Если команда "TEST" - проверка связи
-    if (command == "TEST") 
-    {
-      // Отвечаем компьютеру: "ARDUINO_OK"
+
+    if (command == "TEST") {
       Serial.println("ARDUINO_OK");
     }
-    
-    // Если команда "LED_ON" - включить светодиод
-    else if (command == "LED_ON") 
-    {
-      digitalWrite(LED_PIN, HIGH);  // HIGH = высокий уровень = 5V = ВКЛ
-      blinkActive = false;          // Останавливаем мигание
-      Serial.println("LED_ON_OK");  // Подтверждаем выполнение
+
+    else if (command == "LED_ON") {
+      blinkActive = false;
+      ledState = true;
+      digitalWrite(LED_PIN, HIGH);
+      Serial.println("LED_ON_OK");
+      updateDisplay();
     }
-    
-    // Если команда "LED_OFF" - выключить светодиод
-    else if (command == "LED_OFF") 
-    {
-      digitalWrite(LED_PIN, LOW);   // LOW = низкий уровень = 0V = ВЫКЛ
-      blinkActive = false;          // Останавливаем мигание
-      Serial.println("LED_OFF_OK"); // Подтверждаем
+
+    else if (command == "LED_OFF") {
+      blinkActive = false;
+      ledState = false;
+      digitalWrite(LED_PIN, LOW);
+      Serial.println("LED_OFF_OK");
+      updateDisplay();
     }
-    
-    // Если команда "MODE_SLOW" - медленное мигание
-    else if (command == "MODE_SLOW") 
-    {
-      // Настраиваем параметры мигания ( меняем значения глобальных переменных )
-      blinkActive = true;            // Включаем режим мигания
-      blinkCount = 0;                // Счётчик сбрасываем
-      blinkMaxCount = 10;            // 10 изменений = 5 раз вкл/выкл
-      blinkInterval = 1000;          // Меняем раз в секунду
-      lastBlinkTime = millis();      // Запоминаем текущее время
-      ledState = false;              // Начинаем с выключенного
-      digitalWrite(LED_PIN, LOW);    // Выключаем на всякий случай
-      Serial.println("MODE_SLOW_OK"); // Подтверждаем
-    }
-    
-    // Если команда "MODE_MIDDLE" - среднее мигание
-    else if (command == "MODE_MIDDLE") 
-    {
+
+    else if (command == "MODE_SLOW") {
       blinkActive = true;
       blinkCount = 0;
-      blinkMaxCount = 20;            // 20 изменений = 10 раз
-      blinkInterval = 500;            // Полсекунды
+      blinkMaxCount = 10;
+      blinkInterval = 1000;
+      lastBlinkTime = millis();
+      ledState = false;
+      digitalWrite(LED_PIN, LOW);
+      Serial.println("MODE_SLOW_OK");
+      updateDisplay();
+    }
+
+    else if (command == "MODE_MIDDLE") {
+      blinkActive = true;
+      blinkCount = 0;
+      blinkMaxCount = 20;
+      blinkInterval = 500;
       lastBlinkTime = millis();
       ledState = false;
       digitalWrite(LED_PIN, LOW);
       Serial.println("MODE_MIDDLE_OK");
+      updateDisplay();
     }
-    
-    // Если команда "MODE_FAST" - быстрое мигание
-    else if (command == "MODE_FAST") 
-    {
+
+    else if (command == "MODE_FAST") {
       blinkActive = true;
       blinkCount = 0;
-      blinkMaxCount = 40;            // 40 изменений = 20 раз
-      blinkInterval = 100;            // 0.1 секунды
+      blinkMaxCount = 40;
+      blinkInterval = 100;
       lastBlinkTime = millis();
       ledState = false;
       digitalWrite(LED_PIN, LOW);
       Serial.println("MODE_FAST_OK");
+      updateDisplay();
     }
-  } // end of:  if (Serial.available() > 0)
-  
+  }
+
   // =====================================================
   // 2. НЕБЛОКИРУЮЩЕЕ МИГАНИЕ
-  //    Выполняется независимо, не мешая обрабатывать кнопку
   // =====================================================
-  
-  // Если режим мигания активен (blinkActive = true)
-  if (blinkActive) 
-  {
-    
-    // millis() - сколько миллисекунд прошло с момента запуска Arduino
+
+  if (blinkActive) {
     unsigned long now = millis();
-    
-    // Если прошло достаточно времени с последнего переключения
-    // (now - lastBlinkTime) - разница в миллисекундах
-    // >= blinkInterval - если больше или равно нужному интервалу
-    if (now - lastBlinkTime >= blinkInterval) 
-    {
-      
-      // Запоминаем время этого переключения
+
+    if (now - lastBlinkTime >= blinkInterval) {
       lastBlinkTime = now;
-      
-      // Переключаем состояние на противоположное
-      // !ledState означает "НЕ ledState" - если было true станет false и наоборот
+
       ledState = !ledState;
-      
-      // Применяем новое состояние к светодиоду
       digitalWrite(LED_PIN, ledState);
-      
-      // Увеличиваем счётчик миганий на 1
       blinkCount++;
-      
-      // Если сделали нужное количество миганий
-      if (blinkCount >= blinkMaxCount) 
-      {
-        blinkActive = false;          // Выключаем режим мигания
-        digitalWrite(LED_PIN, LOW);   // Гасим светодиод
+
+      // Обновляем дисплей при каждом переключении LED
+      updateDisplay();
+
+      if (blinkCount >= blinkMaxCount) {
+        blinkActive = false;
+        ledState = false;
+        digitalWrite(LED_PIN, LOW);
+        updateDisplay();
       }
     }
   }
-  
+
   // =====================================================
   // 3. ЧТЕНИЕ КНОПКИ D3
   // =====================================================
-  
-  // static - означает, что переменная сохраняет значение между вызовами loop()
-  // lastButtonState - последнее известное состояние кнопки
-  static int lastButtonState = HIGH;
-  
-  // lastButtonSendTime - когда последний раз отправляли состояние кнопки
-  static unsigned long lastButtonSendTime = 0;
-  
-  // digitalRead(BUTTON_PIN) - читаем текущее состояние кнопки
-  // HIGH (1) - кнопка НЕ НАЖАТА (подтяжка к +5V)
-  // LOW (0) - кнопка НАЖАТА (соединена с GND)
-  int currentButtonState = digitalRead(BUTTON_PIN);
-  
-  // Если состояние изменилось по сравнению с предыдущим
-  if (currentButtonState != lastButtonState) 
-  {
-    
-    // Ждём 5 миллисекунд - чтобы кнопка "успокоилась" (антидребезг)
-    delay(5);
-    
-    // Читаем состояние кнопки ещё раз - убеждаемся что это было именно нажатие
-    currentButtonState = digitalRead(BUTTON_PIN);
-    
-    // Если после задержки состояние всё ещё отличается
-    if (currentButtonState != lastButtonState) 
-    {
-      
-      // Запоминаем новое состояние
-      lastButtonState = currentButtonState;
-      
-      // Ограничиваем частоту отправки - не чаще раза в 50 мс
-      // Это защита от спама сообщениями
-      if (millis() - lastButtonSendTime > 50) 
-      {        
-        // Если кнопка нажата (LOW) - отправляем "B:1"
-        if (lastButtonState == LOW) 
-        {
-          Serial.println("B:1");  // B - Button, 1 - нажата
-                display.clearDisplay();
-                // Отображаем первую строку
-                display.setCursor(0, 0); // x=0, y=0 (верхний левый угол)
-                display.println("LED STATUS:");
-                
-                // Отображаем вторую строку
-                display.setCursor(0, 20); // x=0, y=20 (вторая строка)
-                display.println("BUTTON: ON");
-                
-                // Выводим всё на экран
-                display.display();
-        } 
-        // Если отпущена (HIGH) - отправляем "B:0"
-        else {
-          Serial.println("B:0");  // 0 - отпущена
-                display.clearDisplay();
-                // Отображаем первую строку
-                display.setCursor(0, 0); // x=0, y=0 (верхний левый угол)
-                display.println("LED STATUS:");
-                
-                // Отображаем вторую строку
-                display.setCursor(0, 20); // x=0, y=20 (вторая строка)
-                display.println("BUTTON: OFF");  
 
-                // Выводим всё на экран
-                display.display();  
+  static int lastButtonState = HIGH;
+  static unsigned long lastButtonSendTime = 0;
+
+  int currentButtonState = digitalRead(BUTTON_PIN);
+
+  if (currentButtonState != lastButtonState) {
+    delay(5);
+    currentButtonState = digitalRead(BUTTON_PIN);
+
+    if (currentButtonState != lastButtonState) {
+      lastButtonState = currentButtonState;
+
+      if (millis() - lastButtonSendTime > 50) {
+        if (lastButtonState == LOW) {
+          buttonPressed = true;
+          Serial.println("B:1");
+        } else {
+          buttonPressed = false;
+          Serial.println("B:0");
         }
-        
-        // Запоминаем время отправки
+
+        // Обновляем дисплей при изменении состояния кнопки
+        updateDisplay();
+
         lastButtonSendTime = millis();
       }
     }
   }
-  
-  // Небольшая задержка в конце каждого цикла
-  // Нужна, чтобы не нагружать процессор, НО НЕ БЛОКИРУЕТ!
-  // Мигание всё равно работает, потому что мы проверяем millis()
+
   delay(5);
 }
