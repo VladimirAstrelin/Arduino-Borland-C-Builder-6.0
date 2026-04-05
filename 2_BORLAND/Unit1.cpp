@@ -1,14 +1,15 @@
 #include <vcl.h>           // Визуальные компоненты C++ Builder
-#pragma hdrstop            // Директива компилятора - стоп заголовочным файлам
-
-#include "Unit1.h"         // Наш заголовочный файл (описание формы)
 #include <windows.h>       // Windows API - функции для работы с портами, файлами
 #include <registry.hpp>    // Работа с реестром Windows (список COM-портов)
+
+#pragma hdrstop            // Всё что написано выше будет включено в предкомпиляцию
+
+#include "Unit1.h"         // Файл описания формы
 
 #pragma package(smart_init)   // Оптимизация компиляции
 #pragma resource "*.dfm"      // Подключаем файл с описанием формы
 
-// Глобальная переменная Form1 - теперь она существует
+// Глобальная переменная Form1
 TForm1 *Form1;
 
 //---------------------------------------------------------------------------
@@ -88,32 +89,33 @@ __fastcall TForm1::TForm1(TComponent* Owner)
     connected = false;              // Ещё не подключены
     lastButtonState = false;        // Кнопка не нажата (по умолчанию)
 
-    // --- Настройка интерфейса (что видит пользователь) ---
-    
-    // Заголовок окна
-    Caption = "Arduino Control v1.0";
-    
-    // Надпись статуса подключения
-    LBL_CONNECTION_STATUS->Caption = "DISCONNECTED";
-    
-    // Статус светодиода
-    LBL_LED_STATUS->Caption = "OFF";
-    
-    // Переключатели по умолчанию: OFF и SLOW
-    RAD_BTN_OFF->Checked = true;
-    RAD_BTN_SLOW->Checked = true;
-    
-    // Кнопка D3 - начальное состояние: отпущена, цвет жёлтый
-    LBL_BTN_D3_STATUS->Caption = "D3 BUTTON: RELEASED";
-    SH_BTN_D3_COLOR->Brush->Color = clYellow;    // Жёлтый
-    SH_BTN_D3_COLOR->Shape = stCircle;           // Круг
-    SH_BTN_D3_COLOR->Width = 30;                 // Ширина 30 пикселей
-    SH_BTN_D3_COLOR->Height = 30;                // Высота 30 пикселей
-
-    // Переменные для защиты от повторных команд
+        // Переменные для защиты от повторных команд
     commandPending = false;   // Никакая команда не выполняется
     lastCommand = "";         // Последняя команда - пустая
     commandStartTime = 0;     // Время отправки = 0
+
+    // --- Настройка интерфейса (что видит пользователь) ---
+    
+    // Заголовок окна главной формы
+    Caption = "Arduino Control v2.0";
+    
+    // Надпись статуса подключения
+    LBL_CONNECTION_STATUS->Caption = "CONNECTION: DISCONNECTED";
+    
+    // Статус светодиода
+    LBL_LED_STATUS->Caption = "LED: OFF";
+    
+    // Можно выбрать активный переключатель по умолчанию:
+    //RAD_BTN_OFF->Checked = true;
+
+    // Label для кнопки D3 - начальное состояние: отпущена
+    LBL_BTN_D3_STATUS->Caption = "D3 BUTTON: RELEASED";
+
+    // Кружочек (Shape) обозначающий LED, его цвет, форма, размеры
+    SH_BTN_D3->Brush->Color = clBtnFace ;  // Цвет: Прозрачный
+    SH_BTN_D3->Shape = stCircle;           // Форма: Круг
+    SH_BTN_D3->Width = 30;                 // Ширина 30 пикселей
+    SH_BTN_D3->Height = 30;                // Высота 30 пикселей
 }
 
 //---------------------------------------------------------------------------
@@ -231,7 +233,10 @@ void TForm1::UpdateButtonUI(bool pressed)
         // Делаем текст красным
         LBL_BTN_D3_STATUS->Font->Color = clRed;
         // Закрашиваем кружок красным
-        SH_BTN_D3_COLOR->Brush->Color = clRed;
+        SH_BTN_D3->Brush->Color = clRed;
+        // Увеличиваем его немного в размерах
+        SH_BTN_D3->Width = 35;                 // Ширина 35 пикселей
+        SH_BTN_D3->Height = 35;                // Высота 35 пикселей
     }
     else  // Если кнопка отпущена
     {
@@ -239,8 +244,11 @@ void TForm1::UpdateButtonUI(bool pressed)
         LBL_BTN_D3_STATUS->Caption = "D3 BUTTON: RELEASED";
         // Делаем текст чёрным
         LBL_BTN_D3_STATUS->Font->Color = clBlack;
-        // Закрашиваем кружок жёлтым
-        SH_BTN_D3_COLOR->Brush->Color = clYellow;
+        // Возвращаем кружку прозрачный цвет
+        SH_BTN_D3->Brush->Color = clBtnFace; //Прозрачный цвет
+        // Возвращаем кружку его прежний размер
+        SH_BTN_D3->Width = 30;                 // Ширина 30 пикселей
+        SH_BTN_D3->Height = 30;                // Высота 30 пикселей
     }
     
     // Запоминаем новое состояние
@@ -269,7 +277,7 @@ void TForm1::ParseArduinoData(String data)
         || data == "MODE_MIDDLE_OK"
         || data == "MODE_FAST_OK")
     {
-        commandPending = false;  // Команда выполнена!
+        commandPending = false;  // Команда выполнена! Больше ничего не ждём.
     }
     
     // Формат данных от кнопки: B:1 или B:0
@@ -578,12 +586,12 @@ void __fastcall TForm1::BTN_DISCONNECTClick(TObject *Sender)
 
     // Сбрасываем все настройки
     connected = false;
-    LBL_CONNECTION_STATUS->Caption = "DISCONNECTED";
+    LBL_CONNECTION_STATUS->Caption = "CONNECTION: DISCONNECTED";
     
     // Возвращаем переключатели в исходное состояние
     RAD_BTN_OFF->Checked = true;
     RAD_BTN_SLOW->Checked = true;
-    LBL_LED_STATUS->Caption = "OFF";
+    LBL_LED_STATUS->Caption = "LED: OFF";
     
     MessageBox(0, "Disconnected", "Connection status", MB_OK);
     SB_MAIN_STATUS_BAR->SimpleText = "Disconnected from Arduino";
@@ -599,7 +607,7 @@ void __fastcall TForm1::RAD_BTN_ONClick(TObject *Sender)
     if (RAD_BTN_ON->Checked && connected)
     {
         // Меняем надпись и цвет
-        LBL_LED_STATUS->Caption = "ON";
+        LBL_LED_STATUS->Caption = "LED: ON";
         LBL_LED_STATUS->Font->Color = clGreen;  // Зелёный
         
         // Отправляем команду на Arduino
@@ -618,7 +626,7 @@ void __fastcall TForm1::RAD_BTN_OFFClick(TObject *Sender)
 {
     if (RAD_BTN_OFF->Checked && connected)
     {
-        LBL_LED_STATUS->Caption = "OFF";
+        LBL_LED_STATUS->Caption = "LED: OFF";
         LBL_LED_STATUS->Font->Color = clRed;  // Красный
         SendCommand("LED_OFF");
         SB_MAIN_STATUS_BAR->SimpleText = "LED: OFF";
@@ -633,7 +641,7 @@ void __fastcall TForm1::RAD_BTN_SLOWClick(TObject *Sender)
 {
     if (RAD_BTN_SLOW->Checked && connected)
     {
-        LBL_LED_STATUS->Caption = "SLOW";
+        LBL_LED_STATUS->Caption = "LED: SLOW";
         LBL_LED_STATUS->Font->Color = clBlue;  // Синий
         SendCommand("MODE_SLOW");
         SB_MAIN_STATUS_BAR->SimpleText = "LED: SLOW BLINK";
@@ -648,7 +656,7 @@ void __fastcall TForm1::RAD_BTN_MIDDLEClick(TObject *Sender)
 {
     if (RAD_BTN_MIDDLE->Checked && connected)
     {
-        LBL_LED_STATUS->Caption = "MIDDLE";
+        LBL_LED_STATUS->Caption = "LED: MIDDLE";
         LBL_LED_STATUS->Font->Color = clPurple;  // Фиолетовый
         SendCommand("MODE_MIDDLE");
         SB_MAIN_STATUS_BAR->SimpleText = "LED: MIDDLE BLINK";
@@ -663,7 +671,7 @@ void __fastcall TForm1::RAD_BTN_FASTClick(TObject *Sender)
 {
     if (RAD_BTN_FAST->Checked && connected)
     {
-        LBL_LED_STATUS->Caption = "FAST";
+        LBL_LED_STATUS->Caption = "LED: FAST";
         LBL_LED_STATUS->Font->Color = clMaroon;  // Тёмно-красный
         SendCommand("MODE_FAST");
         SB_MAIN_STATUS_BAR->SimpleText = "LED: FAST BLINK";
