@@ -126,12 +126,16 @@ void __fastcall TForm1::FormCreate(TObject *Sender)
     // Очищаем выпадающий список
     CMB_COM_PORT->Clear();
     
-    // Работа с реестром Windows - там хранятся все COM-порты
-    // new - создаём новый объект в памяти
+// --- РАБОТА С РЕЕСТРОМ ---
+// Windows хранит в реестре все данные о COM-портах
+
+    // new - создаём новый объект в куче
     TRegistry *reg = new TRegistry();
     
-    // RootKey - корневой ключ реестра
-    // HKEY_LOCAL_MACHINE - информация о компьютере
+    // Устанавливаем свойство RootKey класса TRegistry —
+    // указываем с какой корневой ветки реестра начинать поиск.
+    // HKEY_LOCAL_MACHINE это ветка с информацией о железе компьютера,
+    // именно там Windows хранит список COM-портов
     reg->RootKey = HKEY_LOCAL_MACHINE;
     
     // Пытаемся открыть ключ, где лежат COM-порты
@@ -175,7 +179,7 @@ void __fastcall TForm1::FormCreate(TObject *Sender)
         // Добавляем заглушку "Порты не найдены"
         CMB_COM_PORT->Items->Add("No COM ports found");
     }
-    
+
     // Выбираем первый порт в списке (по умолчанию)
     CMB_COM_PORT->ItemIndex = 0;
 }
@@ -393,8 +397,11 @@ void __fastcall TForm1::BTN_CONNECTClick(TObject *Sender)
         return;
     }
 
+    // Значение по умолчанию, например COM13
+    // Перестраховка на случай если ItemIndex вернул -1 (ничего не выбрано)
+    String portName = "COM13";
+
     // --- Получаем выбранный порт из списка ---
-    String portName = "COM3";  // Значение по умолчанию
     if (CMB_COM_PORT->ItemIndex >= 0)  // Если что-то выбрано
     {
         // Берём текст из выпадающего списка
@@ -407,10 +414,12 @@ void __fastcall TForm1::BTN_CONNECTClick(TObject *Sender)
         MessageBox(0, "No COM ports available!", "Connection Error", MB_OK);
         return;
     }
-    
+
+
     // --- Формируем имя порта для Windows ---
+
     // Проблема: Windows по-разному работает с COM1-COM9 и COM10+
-    // Для COM10+ нужно специальное имя: "\\.\COM13"
+    // Для COM10+ нужно специальное имя, например, "\\\\.\\COM13"
     String comPort;
     if (portName.Pos("COM") == 1)  // Если имя начинается с "COM"
     {
