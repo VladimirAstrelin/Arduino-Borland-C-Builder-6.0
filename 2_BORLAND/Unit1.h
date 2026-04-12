@@ -1,24 +1,13 @@
-//---------------------------------------------------------------------------
-// Это защита от повторного включения файла
-// Если Unit1H ещё не определён - определяем его
+// v4.0
 #ifndef Unit1H
 #define Unit1H
 //---------------------------------------------------------------------------
-
-// Подключаем нужные библиотеки C++ Builder
-// В них описаны все компоненты: кнопки, надписи, вкладки и т.д.
 #include <Classes.hpp>    // Базовые классы
 #include <Controls.hpp>   // Элементы управления
 #include <StdCtrls.hpp>   // Стандартные контролы (кнопки, надписи)
 #include <Forms.hpp>      // Формы и окна
 #include <ComCtrls.hpp>   // Дополнительные контролы (вкладки)
 #include <ExtCtrls.hpp>   // Расширенные контролы (таймер, фигуры)
-
-//---------------------------------------------------------------------------
-// ОПИСАНИЕ КЛАССА НАШЕЙ ФОРМЫ
-// class - это шаблон, описывающий, из чего состоит наша программа
-// public - доступно всем
-// private - доступно только внутри класса
 //---------------------------------------------------------------------------
 class TForm1 : public TForm  // Наследуемся от стандартного класса формы
 {
@@ -28,31 +17,31 @@ __published:
         TPageControl *PC_MAIN_PAGE_CONTROL;
 
         // --- Вкладка CONNECT (подключение) ---
-        TTabSheet *TS_CONNECT;              // Сама вкладка
-        TGroupBox *GB_ARD_CONN;              // Рамка с заголовком
-        TLabel *LBL_CONNECTION_STATUS;       // Надпись "Статус подключения"
-        TLabel *LBL_CHOOSE_COM_PORT;         // Надпись "Выберите COM порт"
-        TComboBox *CMB_COM_PORT;              // Выпадающий список с портами
-        TButton *BTN_REFRESH;                 // Кнопка "Обновить список"
-        TButton *BTN_CONNECT;                  // Кнопка "Подключиться"
-        TButton *BTN_DISCONNECT;               // Кнопка "Отключиться"
+        TTabSheet *TS_CONNECT;              // Вкладка CONNECT
+        TGroupBox *GB_ARD_CONN;             // Рамка с заголовком CONNECT
+        TLabel *LBL_CONNECTION_STATUS;      // Надпись "Статус подключения"
+        TLabel *LBL_CHOOSE_COM_PORT;        // Надпись "Выберите COM порт"
+        TComboBox *CMB_COM_PORT;            // Выпадающий список с портами
+        TButton *BTN_REFRESH;               // Кнопка "Обновить список"
+        TButton *BTN_CONNECT;               // Кнопка "Подключиться"
+        TButton *BTN_DISCONNECT;            // Кнопка "Отключиться"
 
         // --- Вкладка LED CONTROL (управление светодиодом) ---
-        TTabSheet *TS_LED_CONTROL;
-        TGroupBox *GB_LED_MODE;
-        TLabel *LBL_LED_STATUS;                // Статус светодиода
-        TLabel *LBL_CHOOSE_LED_MODE;           // Надпись "Выберите режим"
-        TRadioButton *RAD_BTN_ON;               // Радиокнопка "Включить"
-        TRadioButton *RAD_BTN_OFF;              // Радиокнопка "Выключить"
-        TRadioButton *RAD_BTN_SLOW;              // Радиокнопка "Медленно"
-        TRadioButton *RAD_BTN_MIDDLE;            // Радиокнопка "Средне"
-        TRadioButton *RAD_BTN_FAST;               // Радиокнопка "Быстро"
-        
+        TTabSheet *TS_LED_CONTROL;          // Вкладка LED CONTROL
+        TGroupBox *GB_LED_MODE;             // Рамка с заголовком LED CONTROL
+        TLabel *LBL_LED_STATUS;             // Статус светодиода
+        TLabel *LBL_CHOOSE_LED_MODE;        // Надпись "Выберите режим"
+        TRadioButton *RAD_BTN_ON;           // Радиокнопка "Включить"
+        TRadioButton *RAD_BTN_OFF;          // Радиокнопка "Выключить"
+        TRadioButton *RAD_BTN_SLOW;         // Радиокнопка "Медленно"
+        TRadioButton *RAD_BTN_MIDDLE;       // Радиокнопка "Средне"
+        TRadioButton *RAD_BTN_FAST;         // Радиокнопка "Быстро"
+
         // --- Вкладка BUTTON D3 (кнопка на пине D3) ---
-        TTabSheet *TS_BUTTON_D3;
+        TTabSheet *TS_BUTTON_D3;     // Вкладка BUTTON D3
         TGroupBox *GB_BUTTON_D3;
-        TShape *SH_BTN_D3_COLOR;                 // Фигура (кружок) - меняет цвет
-        TLabel *LBL_BTN_D3_STATUS;                // Надпись со статусом кнопки
+        TShape *SH_BTN_D3;     // Фигура (кружок) - меняет цвет
+        TLabel *LBL_BTN_D3_STATUS;   // Надпись со статусом кнопки
         
         // --- Статусная строка внизу окна ---
         TStatusBar *SB_MAIN_STATUS_BAR;
@@ -61,23 +50,24 @@ __published:
         TTimer *TimerReadCom;
 
         // --- Обработчики событий (функции, которые вызываются при действиях) ---
-        void __fastcall FormCreate(TObject *Sender);        // При создании формы
-        void __fastcall BTN_REFRESHClick(TObject *Sender);  // Нажали REFRESH
-        void __fastcall BTN_CONNECTClick(TObject *Sender);  // Нажали CONNECT
-        void __fastcall BTN_DISCONNECTClick(TObject *Sender); // Нажали DISCONNECT
+        void __fastcall FormCreate(TObject *Sender);          // При создании формы
         
-        void __fastcall RAD_BTN_ONClick(TObject *Sender);   // Нажали ON
-        void __fastcall RAD_BTN_OFFClick(TObject *Sender);  // Нажали OFF
-        void __fastcall RAD_BTN_SLOWClick(TObject *Sender); // Нажали SLOW
+        void __fastcall BTN_REFRESHClick(TObject *Sender);    // Нажали REFRESH
+        void __fastcall BTN_CONNECTClick(TObject *Sender);    // Нажали CONNECT
+        void __fastcall BTN_DISCONNECTClick(TObject *Sender); // Нажали DISCONNECT
+
+        void __fastcall RAD_BTN_ONClick(TObject *Sender);     // Нажали ON
+        void __fastcall RAD_BTN_OFFClick(TObject *Sender);    // Нажали OFF
+        void __fastcall RAD_BTN_SLOWClick(TObject *Sender);   // Нажали SLOW
         void __fastcall RAD_BTN_MIDDLEClick(TObject *Sender); // Нажали MIDDLE
-        void __fastcall RAD_BTN_FASTClick(TObject *Sender); // Нажали FAST
+        void __fastcall RAD_BTN_FASTClick(TObject *Sender);   // Нажали FAST
         
         void __fastcall TimerReadComTimer(TObject *Sender); // Сработал таймер
 
 // private - скрытые переменные и функции, доступные только внутри этого класса
 private:
-        HANDLE hCom;           // Дескриптор COM-порта (как номерок в гардеробе)
-                               // По этому номерку Windows понимает, с каким портом работать
+        HANDLE hCom;           // Дескриптор COM-порта 
+                               // По этому номеру Windows понимает, с каким портом работать
         
         bool connected;        // Флаг подключения: true - подключены, false - нет
         
@@ -86,6 +76,7 @@ private:
         // --- Приватные методы (функции) ---
         void SendCommand(String command);     // Отправить команду Arduino
         void UpdateButtonUI(bool pressed);    // Обновить картинку кнопки
+        void UpdateLedUI(String mode);        // Обновить UI светодиода
         void ParseArduinoData(String data);   // Разобрать данные от Arduino
 
         // --- Переменные для защиты от повторных команд ---

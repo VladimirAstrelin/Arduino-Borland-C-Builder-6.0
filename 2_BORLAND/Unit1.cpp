@@ -1,3 +1,4 @@
+// v4.0
 #include <vcl.h>           // Визуальные компоненты C++ Builder
 #include <windows.h>       // Windows API - функции для работы с портами, файлами
 #include <registry.hpp>    // Работа с реестром Windows (список COM-портов)
@@ -15,64 +16,86 @@ TForm1 *Form1;
 //---------------------------------------------------------------------------
 // ============================================================
 // ФУНКЦИЯ ПРОВЕРКИ ARDUINO
-// Что делает: отправляет команду TEST и ждёт ответ ARDUINO_OK
+// Отправляет TEST и ищет ARDUINO_OK среди всех ответов.
+// Учитывает что Arduino может прислать ARDUINO_READY
+// до того как ответит на нашу команду.
 // ============================================================
-bool CheckArduino(HANDLE hPort)  // hPort - дескриптор открытого COM-порта
+bool CheckArduino(HANDLE hPort)
 {
-    // Если порт не открыт (дескриптор неправильный) - сразу выходим
     if (hPort == INVALID_HANDLE_VALUE)
         return false;
-    
-    // Команда для отправки. \n - символ новой строки, Arduino ждёт его
+
     char testCmd[] = "TEST\n";
-    DWORD bytesWritten;  // Сюда запишется, сколько байт реально отправили
-    
-    // Пробуем 3 раза, вдруг Arduino занята или не сразу ответит
+    DWORD bytesWritten;
+
     for (int attempt = 0; attempt < 3; attempt++)
     {
-        // WriteFile - отправляем данные в порт
+        // Очищаем буфер перед каждой попыткой — убираем
+        // всё что Arduino могла прислать до нашего запроса
+        // (например ARDUINO_READY при старте)
+        PurgeComm(hPort, PURGE_RXCLEAR | PURGE_TXCLEAR);
+
+        // Отправляем TEST
         if (!WriteFile(hPort, testCmd, strlen(testCmd), &bytesWritten, NULL))
         {
-            Sleep(100);  // Не получилось - ждём 100 мс и пробуем снова
+            Sleep(100);
             continue;
         }
-        
-        // ЖДЁМ ОТВЕТА 300 мс - Arduino нужно время на обработку
+
+        // Ждём пока Arduino обработает команду и ответит
         Sleep(300);
-        
-        // Буфер для ответа от Arduino
-        char buffer[100] = {0};  // {0} - заполняем весь массив нулями
-        DWORD bytesRead;          // Сколько байт прочитали
-        
-        // Читаем ответ из порта
-        if (ReadFile(hPort, buffer, sizeof(buffer)-1, &bytesRead, NULL))
+
+        // Читаем всё что пришло в буфер
+        char buffer[256] = {0};
+        DWORD bytesRead;
+
+        if (!ReadFile(hPort, buffer, sizeof(buffer)-1, &bytesRead, NULL))
         {
-            // Если что-то прочитали (bytesRead > 0)
-            if (bytesRead > 0)
+            Sleep(100);
+            continue;
+        }
+
+        // Если ничего не пришло — следующая попытка
+        if (bytesRead == 0)
+        {
+            Sleep(100);
+            continue;
+        }
+
+        // Ставим нуль в конце и превращаем в строку
+        buffer[bytesRead] = '\0';
+        String response = String(buffer);
+
+        // Разбиваем на отдельные строки — Arduino могла прислать
+        // несколько сообщений подряд, например:
+        // "ARDUINO_READY\nARDUINO_OK\n"
+        // TStringList автоматически разобьёт по \n
+        TStringList *lines = new TStringList();
+        lines->Text = response;
+
+        bool found = false;
+
+        for (int i = 0; i < lines->Count; i++)
+        {
+            String line = lines->Strings[i].Trim();
+
+            // Ищем ARDUINO_OK среди всех строк
+            if (line == "ARDUINO_OK")
             {
-                // Ставим нуль в конце строки
-                buffer[bytesRead] = '\0';
-                
-                // Превращаем массив символов в удобную строку String
-                String response = String(buffer);
-                
-                // Trim() - обрезаем пробелы и переносы строк
-                response = response.Trim();
-                
-                // Если ответ "ARDUINO_OK" - это наша Arduino!
-                if (response == "ARDUINO_OK")
-                {
-                    return true;  // Ура!
-                }
+                found = true;
+                break;
             }
         }
-        
-        // Очищаем буфер порта перед следующей попыткой
-        PurgeComm(hPort, PURGE_RXCLEAR | PURGE_TXCLEAR);
-        Sleep(100);  // Ждём перед повторной попыткой
+
+        delete lines;
+
+        if (found)
+            return true;  // Arduino найдена и отвечает
+
+        // ARDUINO_OK не нашли — ждём и пробуем снова
+        Sleep(100);
     }
-    
-    // После трёх попыток так и не дождались ответа - нет Arduino
+
     return false;
 }
 
@@ -102,17 +125,11 @@ void __fastcall TForm1::FormCreate(TObject *Sender)
 {
     // --- Настройка интерфейса (что видит пользователь) ---
 
-    // Заголовок окна главной формы
-    Caption = "Arduino Control v2.0";
-
     // Надпись статуса подключения
     LBL_CONNECTION_STATUS->Caption = "CONNECTION: DISCONNECTED";
 
     // Статус светодиода
     LBL_LED_STATUS->Caption = "LED: OFF";
-
-    // Можно выбрать активный переключатель по умолчанию:
-    //RAD_BTN_OFF->Checked = true;
 
     // Label для кнопки D3 - начальное состояние: отпущена
     LBL_BTN_D3_STATUS->Caption = "D3 BUTTON: RELEASED";
@@ -257,50 +274,199 @@ void TForm1::UpdateButtonUI(bool pressed)
     lastButtonState = pressed;
 }
 
-//---------------------------------------------------------------------------
+
+// ============================================================
+// ОБНОВЛЕНИЕ ИНТЕРФЕЙСА - СВЕТОДИОД
+// Вызывается ТОЛЬКО из ParseArduinoData после получения
+// подтверждения от Arduino — не раньше.
+//
+// mode — текущий режим: "ON", "OFF", "SLOW", "MIDDLE", "FAST"
+// ============================================================
+void TForm1::UpdateLedUI(String mode)
+{
+    if (mode == "ON")
+    {
+        LBL_LED_STATUS->Caption    = "LED: ON";
+        LBL_LED_STATUS->Font->Color = clGreen;
+    }
+    else if (mode == "OFF")
+    {
+        LBL_LED_STATUS->Caption    = "LED: OFF";
+        LBL_LED_STATUS->Font->Color = clRed;
+    }
+    else if (mode == "SLOW")
+    {
+        LBL_LED_STATUS->Caption    = "LED: SLOW";
+        LBL_LED_STATUS->Font->Color = clBlue;
+    }
+    else if (mode == "MIDDLE")
+    {
+        LBL_LED_STATUS->Caption    = "LED: MIDDLE";
+        LBL_LED_STATUS->Font->Color = clPurple;
+    }
+    else if (mode == "FAST")
+    {
+        LBL_LED_STATUS->Caption    = "LED: FAST";
+        LBL_LED_STATUS->Font->Color = clMaroon;
+    }
+}
+
 // ============================================================
 // ПАРСИНГ ДАННЫХ ОТ ARDUINO
-// Разбирает строки, которые пришли от Arduino
+// Разбирает каждую строку которая пришла от Arduino и
+// реагирует на неё: обновляет UI, сбрасывает флаги,показывает ошибки.
 // ============================================================
 void TForm1::ParseArduinoData(String data)
 {
-    // Убираем лишние пробелы и переносы строк
+        // Убираем пробелы, \r, \n по краям
     data = data.Trim();
-    
-    // Если строка пустая - нечего обрабатывать
-    if (data.IsEmpty()) return;
-    
-    // Проверяем, не является ли это ответом на нашу команду
-    // Если да - сбрасываем флаг commandPending
 
-       if (data == "LED_ON_OK"
-        || data == "LED_OFF_OK"
-        || data == "MODE_SLOW_OK"
-        || data == "MODE_MIDDLE_OK"
-        || data == "MODE_FAST_OK")
-    {
-        commandPending = false;  // Команда выполнена! Больше ничего не ждём.
-    }
-    
-    // Формат данных от кнопки: B:1 или B:0
-    // data.Length() - длина строки
-    // data[1] - первый символ (в C++ Builder индексация с 1!)
+    // Пустую строку игнорируем
+    if (data.IsEmpty()) return;
+
+    // =====================================================
+    // БЛОК 1: КНОПКА D3
+    // Формат: "B:1" (нажата) или "B:0" (отпущена)
+    // Проверяем независимо от всего остального —
+    // кнопка может прийти в любой момент
+    // =====================================================
     if (data.Length() >= 3 && data[1] == 'B' && data[2] == ':')
     {
-        // Третий символ - '1' или '0'
         bool pressed = (data[3] == '1');
-        
-        // Обновляем интерфейс
         UpdateButtonUI(pressed);
-        
-        // Показываем в статусной строке
-        SB_MAIN_STATUS_BAR->SimpleText = "Button: " + String(pressed ? "PRESSED" : "released");
+        SB_MAIN_STATUS_BAR->SimpleText = "Button D3: " +
+            String(pressed ? "PRESSED" : "released");
+        return;  // Обработали кнопку — дальше не идём
     }
-    else
+
+    // =====================================================
+    // БЛОК 2: УСПЕШНОЕ ВЫПОЛНЕНИЕ КОМАНД (_OK)
+    // Arduino подтвердила что команда выполнена реально.
+    // Только здесь обновляем UI — не раньше.
+    // =====================================================
+    if (data == "LED_ON_OK")
     {
-        // Другие ответы от Arduino (например, ARDUINO_READY)
-        SB_MAIN_STATUS_BAR->SimpleText = data;
+        commandPending = false;
+        // Обновляем UI только после реального подтверждения
+        UpdateLedUI("ON");
+        SB_MAIN_STATUS_BAR->SimpleText = "LED turned ON confirmed by Arduino";
+        return;
     }
+
+    if (data == "LED_OFF_OK")
+    {
+        commandPending = false;
+        UpdateLedUI("OFF");
+        SB_MAIN_STATUS_BAR->SimpleText = "LED turned OFF confirmed by Arduino";
+        return;
+    }
+
+    if (data == "MODE_SLOW_OK")
+    {
+        commandPending = false;
+        UpdateLedUI("SLOW");
+        SB_MAIN_STATUS_BAR->SimpleText = "Slow blink started confirmed by Arduino";
+        return;
+    }
+
+    if (data == "MODE_MIDDLE_OK")
+    {
+        commandPending = false;
+        UpdateLedUI("MIDDLE");
+        SB_MAIN_STATUS_BAR->SimpleText = "Middle blink started confirmed by Arduino";
+        return;
+    }
+
+    if (data == "MODE_FAST_OK")
+    {
+        commandPending = false;
+        UpdateLedUI("FAST");
+        SB_MAIN_STATUS_BAR->SimpleText = "Fast blink started confirmed by Arduino";
+        return;
+    }
+
+    // =====================================================
+    // БЛОК 3: ОШИБКИ ВЫПОЛНЕНИЯ КОМАНД (_FAIL)
+    // Arduino сообщает что команда НЕ была выполнена.
+    // Показываем ошибку — UI не меняем, он остаётся
+    // в предыдущем состоянии которое соответствует реальности.
+    // =====================================================
+    if (data == "LED_ON_FAIL")
+    {
+        commandPending = false;
+        // UI не обновляем — LED реально не включился
+        SB_MAIN_STATUS_BAR->SimpleText = "ERROR: LED_ON failed on Arduino side!";
+        MessageBox(0, "Arduino could not turn ON the LED!\n"
+                      "Possible hardware problem.",
+                      "Arduino Error", MB_OK | MB_ICONWARNING);
+        return;
+    }
+
+    if (data == "LED_OFF_FAIL")
+    {
+        commandPending = false;
+        SB_MAIN_STATUS_BAR->SimpleText = "ERROR: LED_OFF failed on Arduino side!";
+        MessageBox(0, "Arduino could not turn OFF the LED!\n"
+                      "Possible hardware problem.",
+                      "Arduino Error", MB_OK | MB_ICONWARNING);
+        return;
+    }
+
+    if (data == "MODE_SLOW_FAIL"
+     || data == "MODE_MIDDLE_FAIL"
+     || data == "MODE_FAST_FAIL")
+    {
+        commandPending = false;
+        SB_MAIN_STATUS_BAR->SimpleText = "ERROR: Blink mode failed to start!";
+        MessageBox(0, "Arduino could not start blink mode!\n"
+                      "Possible hardware problem.",
+                      "Arduino Error", MB_OK | MB_ICONWARNING);
+        return;
+    }
+
+    // =====================================================
+    // БЛОК 4: СОБЫТИЯ МИГАНИЯ
+    // Эти сообщения приходят не как ответ на команду,
+    // а самостоятельно — по факту завершения процесса.
+    // =====================================================
+
+    // Мигание завершилось успешно — все N переключений выполнены
+    if (data == "BLINK_DONE")
+    {
+        // Мигание закончилось — LED сейчас выключен
+        UpdateLedUI("OFF");
+        SB_MAIN_STATUS_BAR->SimpleText = "Blink sequence completed successfully";
+        return;
+    }
+
+    // Аварийная остановка: сбой пина во время мигания
+    if (data == "BLINK_PIN_FAIL")
+    {
+        UpdateLedUI("OFF");  // Arduino погасила LED при аварии
+        SB_MAIN_STATUS_BAR->SimpleText = "ERROR: Blink stopped — pin failure!";
+        MessageBox(0, "Arduino detected a pin failure during blink!\n"
+                      "Blink sequence was stopped.\n"
+                      "Check hardware.",
+                      "Arduino Error", MB_OK | MB_ICONERROR);
+        return;
+    }
+
+    // Мигание завершилось но LED не погас до конца
+    if (data == "BLINK_END_FAIL")
+    {
+        SB_MAIN_STATUS_BAR->SimpleText = "ERROR: Blink ended but LED state uncertain!";
+        MessageBox(0, "Blink sequence ended but Arduino\n"
+                      "could not verify final LED state.",
+                      "Arduino Warning", MB_OK | MB_ICONWARNING);
+        return;
+    }
+
+    // =====================================================
+    // БЛОК 5: ВСЁ ОСТАЛЬНОЕ
+    // Сюда попадают: ARDUINO_READY и любые
+    // неизвестные сообщения — просто показываем в статусе
+    // =====================================================
+    SB_MAIN_STATUS_BAR->SimpleText = "Arduino: " + data;
 }
 
 //---------------------------------------------------------------------------
@@ -570,34 +736,38 @@ void __fastcall TForm1::BTN_CONNECTClick(TObject *Sender)
 // ============================================================
 void __fastcall TForm1::BTN_DISCONNECTClick(TObject *Sender)
 {
-    // Если не подключены - выходим
-    if (!connected) 
+    if (!connected)
     {
         MessageBox(0, "Not connected!", "Connection status", MB_OK);
         return;
     }
 
-    // --- ОСТАНАВЛИВАЕМ ТАЙМЕР ---
+    // Останавливаем таймер первым делом
     TimerReadCom->Enabled = false;
 
-    // Если порт открыт
     if (hCom != INVALID_HANDLE_VALUE)
     {
-        // Выключаем светодиод перед отключением (вежливость)
-        SendCommand("LED_OFF");
-        Sleep(50);  // Ждём 50 мс, чтобы команда точно ушла
-        
-        // Закрываем порт
+        // Отправляем LED_OFF напрямую через WriteFile минуя SendCommand.
+        // При отключении нам не нужна защита commandPending и не нужен
+        // ответ от Arduino — просто отправляем и сразу закрываем порт.
+        // Windows гарантирует что данные уйдут из буфера до CloseHandle.
+        char cmd[] = "LED_OFF\n";
+        DWORD bytesWritten;
+        WriteFile(hCom, cmd, strlen(cmd), &bytesWritten, NULL);
+
         CloseHandle(hCom);
         hCom = INVALID_HANDLE_VALUE;
     }
 
-    // Сбрасываем все настройки
-    connected = false;
+    // Сбрасываем состояние программы
+    connected      = false;
+    commandPending = false;
+    lastCommand    = "";
+
+    // Обновляем UI
     LBL_CONNECTION_STATUS->Caption = "CONNECTION: DISCONNECTED";
-    
-    LBL_LED_STATUS->Caption = "LED: OFF";
-    
+    UpdateLedUI("OFF");
+
     MessageBox(0, "Disconnected", "Connection status", MB_OK);
     SB_MAIN_STATUS_BAR->SimpleText = "Disconnected from Arduino";
 }
@@ -608,89 +778,57 @@ void __fastcall TForm1::BTN_DISCONNECTClick(TObject *Sender)
 // ============================================================
 void __fastcall TForm1::RAD_BTN_ONClick(TObject *Sender)
 {
-    // Проверяем: переключатель включён И мы подключены
     if (RAD_BTN_ON->Checked && connected)
     {
-        // Меняем надпись и цвет
-        LBL_LED_STATUS->Caption = "LED: ON";
-        LBL_LED_STATUS->Font->Color = clGreen;  // Зелёный
-        
-        // Отправляем команду на Arduino
+        // Показываем что ждём ответа — UI ещё не меняем
+        LBL_LED_STATUS->Caption     = "LED: ...";
+        LBL_LED_STATUS->Font->Color = clGray;
         SendCommand("LED_ON");
-
-        //ТУТ НЕ ХВАТАЕТ ОБРАТНОЙ СВЯЗИ С АРДУИНО
-        //А ПОЛУЧИЛОСЬ ЛИ ПО ФАКТУ ВКЛЮЧИТЬ LED ?
-        
-        // Показываем в статусной строке
-        SB_MAIN_STATUS_BAR->SimpleText = "LED: ON";
+        SB_MAIN_STATUS_BAR->SimpleText = "Waiting for Arduino confirmation...";
     }
 }
 
-//---------------------------------------------------------------------------
-// ============================================================
-// LED CONTROL - ВЫКЛЮЧИТЬ (OFF)
-// ============================================================
 void __fastcall TForm1::RAD_BTN_OFFClick(TObject *Sender)
 {
     if (RAD_BTN_OFF->Checked && connected)
     {
-        LBL_LED_STATUS->Caption = "LED: OFF";
-        LBL_LED_STATUS->Font->Color = clRed;  // Красный
+        LBL_LED_STATUS->Caption     = "LED: ...";
+        LBL_LED_STATUS->Font->Color = clGray;
         SendCommand("LED_OFF");
-        //ТУТ НЕ ХВАТАЕТ ОБРАТНОЙ СВЯЗИ С АРДУИНО
-        //А ПОЛУЧИЛОСЬ ЛИ ПО ФАКТУ ВЫКЛЮЧИТЬ LED ?
-        SB_MAIN_STATUS_BAR->SimpleText = "LED: OFF";
+        SB_MAIN_STATUS_BAR->SimpleText = "Waiting for Arduino confirmation...";
     }
 }
 
-//---------------------------------------------------------------------------
-// ============================================================
-// LED CONTROL - МЕДЛЕННОЕ МИГАНИЕ (SLOW)
-// ============================================================
 void __fastcall TForm1::RAD_BTN_SLOWClick(TObject *Sender)
 {
     if (RAD_BTN_SLOW->Checked && connected)
     {
-        LBL_LED_STATUS->Caption = "LED: SLOW";
-        LBL_LED_STATUS->Font->Color = clBlue;  // Синий
+        LBL_LED_STATUS->Caption     = "LED: ...";
+        LBL_LED_STATUS->Font->Color = clGray;
         SendCommand("MODE_SLOW");
-        //ТУТ НЕ ХВАТАЕТ ОБРАТНОЙ СВЯЗИ С АРДУИНО
-        //А ПОЛУЧИЛОСЬ ЛИ ПО ФАКТУ ВКЛЮЧИТЬ МЕДЛЕННОЕ МИГАНИЕ ?
-        SB_MAIN_STATUS_BAR->SimpleText = "LED: SLOW BLINK";
+        SB_MAIN_STATUS_BAR->SimpleText = "Waiting for Arduino confirmation...";
     }
 }
 
-//---------------------------------------------------------------------------
-// ============================================================
-// LED CONTROL - СРЕДНЕЕ МИГАНИЕ (MIDDLE)
-// ============================================================
 void __fastcall TForm1::RAD_BTN_MIDDLEClick(TObject *Sender)
 {
     if (RAD_BTN_MIDDLE->Checked && connected)
     {
-        LBL_LED_STATUS->Caption = "LED: MIDDLE";
-        LBL_LED_STATUS->Font->Color = clPurple;  // Фиолетовый
+        LBL_LED_STATUS->Caption     = "LED: ...";
+        LBL_LED_STATUS->Font->Color = clGray;
         SendCommand("MODE_MIDDLE");
-        //ТУТ НЕ ХВАТАЕТ ОБРАТНОЙ СВЯЗИ С АРДУИНО
-        //А ПОЛУЧИЛОСЬ ЛИ ПО ФАКТУ ВКЛЮЧИТЬ СРЕДНЕЕ МИГАНИЕ ?
-        SB_MAIN_STATUS_BAR->SimpleText = "LED: MIDDLE BLINK";
+        SB_MAIN_STATUS_BAR->SimpleText = "Waiting for Arduino confirmation...";
     }
 }
 
-//---------------------------------------------------------------------------
-// ============================================================
-// LED CONTROL - БЫСТРОЕ МИГАНИЕ (FAST)
-// ============================================================
 void __fastcall TForm1::RAD_BTN_FASTClick(TObject *Sender)
 {
     if (RAD_BTN_FAST->Checked && connected)
     {
-        LBL_LED_STATUS->Caption = "LED: FAST";
-        LBL_LED_STATUS->Font->Color = clMaroon;  // Тёмно-красный
+        LBL_LED_STATUS->Caption     = "LED: ...";
+        LBL_LED_STATUS->Font->Color = clGray;
         SendCommand("MODE_FAST");
-        //ТУТ НЕ ХВАТАЕТ ОБРАТНОЙ СВЯЗИ С АРДУИНО
-        //А ПОЛУЧИЛОСЬ ЛИ ПО ФАКТУ ВКЛЮЧИТЬ БЫСТРОЕ МИГАНИЕ ?
-        SB_MAIN_STATUS_BAR->SimpleText = "LED: FAST BLINK";
+        SB_MAIN_STATUS_BAR->SimpleText = "Waiting for Arduino confirmation...";
     }
 }
 //---------------------------------------------------------------------------
